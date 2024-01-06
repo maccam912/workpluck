@@ -1,0 +1,132 @@
+openapi: 3.0.0
+info:
+  title: Asynchronous Job Processing API
+  version: 1.0.0
+  description: API for submitting tasks, retrieving results, and managing worker processing.
+  contact:
+    name: Matt Koski
+    email: maccam912@gmail.com
+servers:
+  - url: https://workpluck.k3s.koski.co
+tags:
+  - name: Task Management
+    description: Operations related to task submission and management
+  - name: Worker Operations
+    description: Operations used by workers to retrieve tasks and submit results
+  - name: Result Retrieval
+    description: Operations use to retrieve final results
+paths:
+  /task:
+    post:
+      summary: Submit a new task
+      description: This endpoint is used to submit a new task for processing.
+      operationId: submitTask
+      tags:
+        - Task Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                topic:
+                  type: string
+                input:
+                  type: object
+              required:
+                - topic
+                - input
+      responses:
+        '201':
+          description: Task created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+
+    get:
+      summary: Retrieve a task for processing
+      description: This endpoint is for workers to retrieve a task for processing based on topic.
+      operationId: retrieveTask
+      tags:
+        - Worker Operations
+      parameters:
+        - in: query
+          name: topic
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Task retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  input:
+                    type: object
+        '204':
+          description: No task available
+
+  /result:
+    get:
+      summary: Retrieve a task result
+      description: This endpoint is used to retrieve the result of a task.
+      operationId: getResult
+      tags:
+        - Result Retrieval
+      parameters:
+        - in: query
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Task result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  output:
+                    type: object
+        '202':
+          description: Task exists but is not yet completed
+        '404':
+          description: Task not found
+
+    post:
+      summary: Submit a task result
+      description: This endpoint is for workers to submit the result of a completed task.
+      operationId: submitResult
+      tags:
+        - Worker Operations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                output:
+                  type: object
+              required:
+                - id
+                - output
+      responses:
+        '200':
+          description: Result accepted
