@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
@@ -43,12 +42,12 @@ var storeMutex = &sync.Mutex{}
 var tracer = otel.GetTracerProvider().Tracer("TaskServer")
 
 func initTracer() {
-	exp, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
-	if err != nil {
-		log.Fatalf("Failed to initialize stdouttrace exporter: %v", err)
-	}
+	// exp, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
+	// if err != nil {
+	// 	log.Fatalf("Failed to initialize stdouttrace exporter: %v", err)
+	// }
 	tp := trace.NewTracerProvider(
-		trace.WithBatcher(exp),
+		// trace.WithBatcher(exp),
 		trace.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL,
 			attribute.String("service.name", "TaskService"),
