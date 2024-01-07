@@ -246,11 +246,31 @@ func handleResult(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func handleObserve(w http.ResponseWriter, r *http.Request) {
+	log.Println("handleObserve called")
+	_, span := tracer.Start(r.Context(), "handleObserve")
+	defer span.End()
+
+	// Print out entire contents of taskStore and resultStore
+	storeMutex.Lock()
+	defer storeMutex.Unlock()
+
+	for id, task := range taskStore {
+		log.Printf("Task: %s, %s", id, task)
+		w.Write([]byte("Task: " + id + ", " + task.Topic + "\n"))
+	}
+	for id, result := range resultStore {
+		log.Printf("Result: %s, %s", id, result)
+		w.Write([]byte("Result: " + id + ", " + result.Output.(string) + "\n"))
+	}
+}
+
 func main() {
 	initTracer()
 	log.Println("Server is starting on port 8080...")
 	http.HandleFunc("/task", handleTask)
 	http.HandleFunc("/result", handleResult)
+	http.HandleFunc("/observe", handleObserve)
 
 	err := http.ListenAndServe(":8080", nil)
 	if err != nil {
