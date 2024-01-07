@@ -255,12 +255,12 @@ func handleObserve(w http.ResponseWriter, r *http.Request) {
 	defer storeMutex.Unlock()
 
 	for id, task := range taskStore {
-		log.Printf("Task: %s, %s", id, task)
-		w.Write([]byte("Task: " + id + ", " + task.Topic + "\n"))
+		log.Printf("Task: %s, %s, %s, %s, %s", id, task, task.Status, task.Input, task.Timestamp)
+		w.Write([]byte("Task: " + id + ", " + task.Topic + ", " + task.Status + ", " + task.Input.(string) + ", " + task.Timestamp.String() + "\n"))
 	}
 	for id, result := range resultStore {
-		log.Printf("Result: %s, %s", id, result)
-		w.Write([]byte("Result: " + id + ", " + result.Output.(string) + "\n"))
+		log.Printf("Result: %s, %s, %s", id, result.ID, result.Output)
+		w.Write([]byte("Result: " + id + ", " + result.ID + ", " + result.Output.(string) + "\n"))
 	}
 }
 
