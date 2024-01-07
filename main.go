@@ -5,15 +5,18 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 )
 
 // Task represents a task with an ID, topic, and input data.
 type Task struct {
-	ID    string      `json:"id"`
-	Topic string      `json:"topic"`
-	Input interface{} `json:"input"`
+	ID        string      `json:"id"`
+	Topic     string      `json:"topic"`
+	Input     interface{} `json:"input"`
+	Status    string      `json:"status"`    // "new", "pending", "completed"
+	Timestamp time.Time   `json:"timestamp"` // Time when the task was retrieved
 }
 
 // Result represents the output of a processed task.
@@ -69,8 +72,12 @@ func handleRetrieveTask(w http.ResponseWriter, r *http.Request) {
 	storeMutex.Lock()
 	defer storeMutex.Unlock()
 
-	for _, task := range taskStore {
-		if task.Topic == topic {
+	currentTime := time.Now()
+	for id, task := range taskStore {
+		if task.Topic == topic && (task.Status == "new" || (task.Status == "pending" && currentTime.Sub(task.Timestamp) > time.Hour)) {
+			task.Status = "pending"
+			task.Timestamp = currentTime
+			taskStore[id] = task
 			json.NewEncoder(w).Encode(task)
 			return
 		}
@@ -92,13 +99,15 @@ func handleSubmitResult(w http.ResponseWriter, r *http.Request) {
 	}
 
 	storeMutex.Lock()
-	_, taskExists := taskStore[result.ID]
+	task, taskExists := taskStore[result.ID]
 	if !taskExists {
 		storeMutex.Unlock()
 		http.Error(w, "Task does not exist", http.StatusNotFound)
 		return
 	}
 
+	task.Status = "completed"
+	taskStore[result.ID] = task
 	resultStore[result.ID] = result
 	storeMutex.Unlock()
 

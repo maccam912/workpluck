@@ -40,8 +40,9 @@ func TestHandleTaskSubmit(t *testing.T) {
 
 // TestHandleRetrieveTask tests the task retrieval handler.
 func TestHandleRetrieveTask(t *testing.T) {
-	// Pre-populate taskStore with a task
-	testTask := Task{ID: "test-id", Topic: "test", Input: map[string]string{"key": "value"}}
+	// Clear and pre-populate taskStore with a task
+	taskStore = make(map[string]Task)
+	testTask := Task{ID: "test-id", Topic: "test", Input: map[string]string{"key": "value"}, Status: "new"}
 	taskStore[testTask.ID] = testTask
 
 	// Mock a request to retrieve the task
@@ -65,15 +66,17 @@ func TestHandleRetrieveTask(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.ID != testTask.ID {
-		t.Errorf("handler returned unexpected task: got %v want %v", response.ID, testTask.ID)
+	if response.ID != testTask.ID || response.Status != "pending" {
+		t.Errorf("handler returned unexpected task: got ID %v with status %v, want ID %v with status pending", response.ID, response.Status, testTask.ID)
 	}
 }
 
 // TestHandleSubmitResult tests the result submission handler.
 func TestHandleSubmitResult(t *testing.T) {
-	// Pre-populate taskStore with a task
-	testTask := Task{ID: "test-id", Topic: "test", Input: map[string]string{"key": "value"}}
+	// Clear taskStore and resultStore, then pre-populate taskStore with a task
+	taskStore = make(map[string]Task)
+	resultStore = make(map[string]Result)
+	testTask := Task{ID: "test-id", Topic: "test", Input: map[string]string{"key": "value"}, Status: "pending"}
 	taskStore[testTask.ID] = testTask
 
 	// Mock a request to submit a result
@@ -92,6 +95,12 @@ func TestHandleSubmitResult(t *testing.T) {
 	// Check the status code
 	if status := rr.Code; status != http.StatusOK {
 		t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
+	}
+
+	// Verify task status is updated
+	updatedTask, exists := taskStore[testTask.ID]
+	if !exists || updatedTask.Status != "completed" {
+		t.Errorf("task status was not updated correctly: got %v, want completed", updatedTask.Status)
 	}
 }
 
