@@ -2,12 +2,18 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
+	"log"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
+	"go.opentelemetry.io/otel/sdk/resource"
+	"go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 )
 
 // Task represents a task with an ID, topic, and input data.
@@ -34,38 +40,74 @@ var resultStore = make(map[string]Result)
 // mutex for concurrent access to the stores.
 var storeMutex = &sync.Mutex{}
 
-// handleTaskSubmit for submitting a new task.
+var tracer = otel.GetTracerProvider().Tracer("TaskServer")
+
+func initTracer() {
+	exp, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
+	if err != nil {
+		log.Fatalf("Failed to initialize stdouttrace exporter: %v", err)
+	}
+	tp := trace.NewTracerProvider(
+		trace.WithBatcher(exp),
+		trace.WithResource(resource.NewWithAttributes(
+			semconv.SchemaURL,
+			attribute.String("service.name", "TaskService"),
+		)),
+	)
+	otel.SetTracerProvider(tp)
+}
+
 func handleTaskSubmit(w http.ResponseWriter, r *http.Request) {
+	log.Println("handleTaskSubmit called")
+	_, span := tracer.Start(r.Context(), "handleTaskSubmit")
+	defer span.End()
+
 	if r.Method != http.MethodPost {
+		log.Println("Invalid method in handleTaskSubmit")
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		span.AddEvent("Invalid method")
 		return
 	}
 
 	var task Task
 	if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
+		log.Printf("Error decoding task: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		span.RecordError(err)
 		return
 	}
 
-	task.ID = uuid.New().String() // Generate a new UUID for the task
-
+	task.ID = uuid.New().String()
 	storeMutex.Lock()
 	taskStore[task.ID] = task
 	storeMutex.Unlock()
 
-	w.WriteHeader(http.StatusCreated) // Set the status code to 201 Created
-	json.NewEncoder(w).Encode(map[string]string{"id": task.ID})
+	w.WriteHeader(http.StatusCreated)
+	err := json.NewEncoder(w).Encode(map[string]string{"id": task.ID})
+	if err != nil {
+		log.Printf("Error encoding response: %v", err)
+		span.RecordError(err)
+	}
+	log.Printf("Task submitted: %s", task.ID)
 }
 
 func handleRetrieveTask(w http.ResponseWriter, r *http.Request) {
+	log.Println("handleRetrieveTask called")
+	_, span := tracer.Start(r.Context(), "handleRetrieveTask")
+	defer span.End()
+
 	if r.Method != http.MethodGet {
+		log.Println("Invalid method in handleRetrieveTask")
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		span.AddEvent("Invalid method")
 		return
 	}
 
 	topic := r.URL.Query().Get("topic")
 	if topic == "" {
+		log.Println("Topic is required in handleRetrieveTask")
 		http.Error(w, "Topic is required", http.StatusBadRequest)
+		span.AddEvent("Missing topic")
 		return
 	}
 
@@ -78,23 +120,37 @@ func handleRetrieveTask(w http.ResponseWriter, r *http.Request) {
 			task.Status = "pending"
 			task.Timestamp = currentTime
 			taskStore[id] = task
-			json.NewEncoder(w).Encode(task)
+			err := json.NewEncoder(w).Encode(task)
+			if err != nil {
+				log.Printf("Error encoding task: %v", err)
+				span.RecordError(err)
+			}
+			log.Printf("Task retrieved: %s", task.ID)
 			return
 		}
 	}
 
-	w.WriteHeader(http.StatusNoContent) // No task available
+	w.WriteHeader(http.StatusNoContent)
+	log.Println("No task available in handleRetrieveTask")
 }
 
 func handleSubmitResult(w http.ResponseWriter, r *http.Request) {
+	log.Println("handleSubmitResult called")
+	_, span := tracer.Start(r.Context(), "handleSubmitResult")
+	defer span.End()
+
 	if r.Method != http.MethodPost {
+		log.Println("Invalid method in handleSubmitResult")
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		span.AddEvent("Invalid method")
 		return
 	}
 
 	var result Result
 	if err := json.NewDecoder(r.Body).Decode(&result); err != nil {
+		log.Printf("Error decoding result: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		span.RecordError(err)
 		return
 	}
 
@@ -102,7 +158,9 @@ func handleSubmitResult(w http.ResponseWriter, r *http.Request) {
 	task, taskExists := taskStore[result.ID]
 	if !taskExists {
 		storeMutex.Unlock()
+		log.Printf("Task does not exist: %s", result.ID)
 		http.Error(w, "Task does not exist", http.StatusNotFound)
+		span.AddEvent("Task not found")
 		return
 	}
 
@@ -112,17 +170,26 @@ func handleSubmitResult(w http.ResponseWriter, r *http.Request) {
 	storeMutex.Unlock()
 
 	w.WriteHeader(http.StatusOK)
+	log.Printf("Result submitted for task: %s", result.ID)
 }
 
 func handleGetResult(w http.ResponseWriter, r *http.Request) {
+	log.Println("handleGetResult called")
+	_, span := tracer.Start(r.Context(), "handleGetResult")
+	defer span.End()
+
 	if r.Method != http.MethodGet {
+		log.Println("Invalid method in handleGetResult")
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		span.AddEvent("Invalid method")
 		return
 	}
 
 	id := r.URL.Query().Get("id")
 	if id == "" {
+		log.Println("ID is required in handleGetResult")
 		http.Error(w, "ID is required", http.StatusBadRequest)
+		span.AddEvent("Missing ID")
 		return
 	}
 
@@ -133,19 +200,28 @@ func handleGetResult(w http.ResponseWriter, r *http.Request) {
 	_, taskExists := taskStore[id]
 
 	if !taskExists {
+		log.Printf("Task not found: %s", id)
 		http.Error(w, "Task not found", http.StatusNotFound)
+		span.AddEvent("Task not found")
 		return
 	}
 
 	if !resultExists {
-		w.WriteHeader(http.StatusAccepted) // Task exists but is not yet completed
+		w.WriteHeader(http.StatusAccepted)
+		log.Printf("Task exists but result not completed: %s", id)
 		return
 	}
 
-	json.NewEncoder(w).Encode(result)
+	err := json.NewEncoder(w).Encode(result)
+	if err != nil {
+		log.Printf("Error encoding result: %v", err)
+		span.RecordError(err)
+	}
+	log.Printf("Result retrieved for task: %s", result.ID)
 }
 
 func handleTask(w http.ResponseWriter, r *http.Request) {
+	log.Println("handleTask called")
 	switch r.Method {
 	case http.MethodPost:
 		handleTaskSubmit(w, r)
@@ -153,10 +229,12 @@ func handleTask(w http.ResponseWriter, r *http.Request) {
 		handleRetrieveTask(w, r)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		log.Println("Invalid method in handleTask")
 	}
 }
 
 func handleResult(w http.ResponseWriter, r *http.Request) {
+	log.Println("handleResult called")
 	switch r.Method {
 	case http.MethodPost:
 		handleSubmitResult(w, r)
@@ -164,13 +242,18 @@ func handleResult(w http.ResponseWriter, r *http.Request) {
 		handleGetResult(w, r)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		log.Println("Invalid method in handleResult")
 	}
 }
 
 func main() {
+	initTracer()
+	log.Println("Server is starting on port 8080...")
 	http.HandleFunc("/task", handleTask)
 	http.HandleFunc("/result", handleResult)
 
-	fmt.Println("Server is starting on port 8080...")
-	http.ListenAndServe(":8080", nil)
+	err := http.ListenAndServe(":8080", nil)
+	if err != nil {
+		log.Fatalf("Server failed to start: %v", err)
+	}
 }
