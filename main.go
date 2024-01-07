@@ -77,6 +77,9 @@ func handleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	task.ID = uuid.New().String()
+	task.Status = "new"
+	task.Timestamp = time.Now()
+
 	storeMutex.Lock()
 	taskStore[task.ID] = task
 	storeMutex.Unlock()
